@@ -56,7 +56,10 @@ print('Validation data size: ', len(validation_data))
 
 def get_batch(split):
     data = training_data if split == 'training' else validation_data
-    
+    start = torch.randint(low=0, high=len(data) - block_size, size=(batch_size,))
+    x = torch.stack([data[i : i + block_size] for i in start])
+    y = torch.stack([data[i + 1 : i + block_size + 1] for i in start])
+    return x, y
 
 #####################################
 # Bigram Model
@@ -75,14 +78,3 @@ class BigramModel(torch.nn.Module):
         if targets is not None:
             loss = torch.nn.functional.cross_entropy(logits.view(B * T, C), targets.view(B * T))
         return logits, loss
-
-model = BigramModel(vocab_size=vocab_size)
-x = torch.tensor([[5, 3, 21], [4, 2, 11]])
-t = torch.tensor([[4, 5, 1], [5, 61, 1]])
-y, loss = model(x, t)
-print(x)
-print(y)
-print(loss)
-print(x.shape)
-print(y.shape)
-print(loss.shape)
