@@ -39,7 +39,7 @@ itoc = {i : c for i, c in enumerate(vocab)}
 encoder = lambda s : [ctoi[c] for c in s]
 decoder = lambda a : ''.join([itoc[i] for i in a])
 
-full_data = encoder(text)
+full_data = torch.tensor(encoder(text), dtype=torch.long)
 
 #####################################
 # Chunk Data
@@ -78,3 +78,24 @@ class BigramModel(torch.nn.Module):
         if targets is not None:
             loss = torch.nn.functional.cross_entropy(logits.view(B * T, C), targets.view(B * T))
         return logits, loss
+
+#####################################
+# Training Loop
+#####################################
+
+bigram_model = BigramModel(vocab_size=vocab_size)
+optimizer = torch.optim.AdamW(bigram_model.parameters(), lr=0.001)
+num_iter = 10000
+for iter in range(num_iter):
+    # 1. Get data
+    x, y = get_batch('training')
+    # 2. Forward
+    logits, loss = bigram_model(x, y)
+    if iter % 100 == 0:
+        print(loss.item())
+    # 3. Reset gradients
+    optimizer.zero_grad()
+    # 4. Backward
+    loss.backward()
+    # 5. Update parameters
+    optimizer.step()
