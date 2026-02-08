@@ -1,6 +1,30 @@
 import requests
 import os
 import torch
+import random
+import time
+import numpy as np
+
+#####################################
+# Set Random Seed for Reproducibility
+#####################################
+
+seed = 971
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
+print(f'Set all random seeds to {seed}')
+
+#####################################
+# Device
+#####################################
+
+device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+# Trick: for small examples, CPU is faster
+device = 'cpu'
+print(f'Code runs on {device}')
 
 #####################################
 # Data Downloading And Reading
@@ -59,7 +83,7 @@ def get_batch(split):
     start = torch.randint(low=0, high=len(data) - block_size, size=(batch_size,))
     x = torch.stack([data[i : i + block_size] for i in start])
     y = torch.stack([data[i + 1 : i + block_size + 1] for i in start])
-    return x, y
+    return x.to(device), y.to(device)
 
 #####################################
 # Bigram Model
@@ -84,20 +108,42 @@ class BigramModel(torch.nn.Module):
 #####################################
 
 bigram_model = BigramModel(vocab_size=vocab_size)
+bigram_model.to(device)
+
 optimizer = torch.optim.AdamW(bigram_model.parameters(), lr=0.001)
-num_iter = 10000
-for iter in range(num_iter):
+num_steps = 20000
+eval_interval = 1000
+eval_examples = 100
+
+time_start = time.time()
+
+def validate():
+    bigram_model.eval()
+    loss_sum = 0.0
+    with torch.no_grad():
+        for _ in range(eval_examples):
+            x, y = get_batch('validation')
+            _, loss = bigram_model(x, y)
+            loss_sum += loss.item()
+    bigram_model.train()
+    return loss_sum / eval_examples
+
+for s in range(num_steps):
     # 1. Get data
     x, y = get_batch('training')
     # 2. Forward
     logits, loss = bigram_model(x, y)
-    if iter % 100 == 0:
-        print(loss.item())
-    # 3. Reset gradients
+    # 3. Validation
+    if s % eval_interval == 0 or s == num_steps - 1:
+        validation_loss = validate()
+        time_spent = time.time() - time_start
+        print(f'Step: {s} | Time: {time_spent:0.3f} | Training loss: {loss.item():0.5f} | Validation loss: {validation_loss:0.5f}')
+
+    # 4. Reset gradients
     optimizer.zero_grad()
-    # 4. Backward
+    # 5. Backward
     loss.backward()
-    # 5. Update parameters
+    # 6. Update parameters
     optimizer.step()
 
 #####################################
@@ -106,17 +152,25 @@ for iter in range(num_iter):
 
 num_examples = 5
 length_example = 100
-idx = torch.zeros((num_examples, 1), dtype=torch.long)
-for iter in range(length_example):
-    # 1. Generate
-    logits, _ = bigram_model(idx)
-    # 2. Logits -> Probs
-    probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)
-    # 3. Sample
-    new_id = torch.multinomial(probs, num_samples=1)
-    # 4. Concatenate 
-    idx = torch.cat((idx, new_id), dim=1)
+idx = torch.zeros((num_examples, 1), dtype=torch.long, device=device)
+
+# Model to evaluation mode.
+bigram_model.eval()
+
+with torch.no_grad():
+    for step in range(length_example):
+        # 1. Generate
+        logits, _ = bigram_model(idx)
+        # 2. Logits -> Probs
+        probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)
+        # 3. Sample
+        new_id = torch.multinomial(probs, num_samples=1)
+        # 4. Concatenate 
+        idx = torch.cat((idx, new_id), dim=1)
 
 for i_example, example in enumerate(idx):
     gen_text = decoder(example.tolist())
     print(f'Generation [{i_example}]: {gen_text}\n\n')
+
+# In case we need to train model later on in the script.
+bigram_model.train()
