@@ -6,10 +6,28 @@ import time
 import numpy as np
 
 #####################################
-# Set Random Seed for Reproducibility
+# Hyper-parameters
 #####################################
 
 seed = 971
+
+training_data_ratio = 0.9
+block_size = 8
+batch_size = 4
+
+training_steps = 20000
+learning_rate = 0.001
+
+eval_interval = 1000
+eval_examples = 100
+
+inference_num = 5
+inference_length = 100
+
+#####################################
+# Set Random Seed for Reproducibility
+#####################################
+
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -69,10 +87,7 @@ full_data = torch.tensor(encoder(text), dtype=torch.long)
 # Chunk Data
 #####################################
 
-block_size = 8
-batch_size = 4
-
-training_data_size = int(0.9 * len(full_data))
+training_data_size = int(training_data_ratio * len(full_data))
 training_data = full_data[:training_data_size]
 validation_data = full_data[training_data_size:]
 print('Training data size: ', len(training_data))
@@ -110,10 +125,7 @@ class BigramModel(torch.nn.Module):
 bigram_model = BigramModel(vocab_size=vocab_size)
 bigram_model.to(device)
 
-optimizer = torch.optim.AdamW(bigram_model.parameters(), lr=0.001)
-num_steps = 20000
-eval_interval = 1000
-eval_examples = 100
+optimizer = torch.optim.AdamW(bigram_model.parameters(), lr=learning_rate)
 
 time_start = time.time()
 
@@ -128,13 +140,13 @@ def validate():
     bigram_model.train()
     return loss_sum / eval_examples
 
-for s in range(num_steps):
+for s in range(training_steps):
     # 1. Get data
     x, y = get_batch('training')
     # 2. Forward
     logits, loss = bigram_model(x, y)
     # 3. Validation
-    if s % eval_interval == 0 or s == num_steps - 1:
+    if s % eval_interval == 0 or s == training_steps - 1:
         validation_loss = validate()
         time_spent = time.time() - time_start
         print(f'Step: {s} | Time: {time_spent:0.3f} | Training loss: {loss.item():0.5f} | Validation loss: {validation_loss:0.5f}')
@@ -150,15 +162,14 @@ for s in range(num_steps):
 # Inference Loop
 #####################################
 
-num_examples = 5
-length_example = 100
-idx = torch.zeros((num_examples, 1), dtype=torch.long, device=device)
+
+idx = torch.zeros((inference_num, 1), dtype=torch.long, device=device)
 
 # Model to evaluation mode.
 bigram_model.eval()
 
 with torch.no_grad():
-    for step in range(length_example):
+    for step in range(inference_length):
         # 1. Generate
         logits, _ = bigram_model(idx)
         # 2. Logits -> Probs
