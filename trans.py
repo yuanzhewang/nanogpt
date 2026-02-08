@@ -99,3 +99,24 @@ for iter in range(num_iter):
     loss.backward()
     # 5. Update parameters
     optimizer.step()
+
+#####################################
+# Inference Loop
+#####################################
+
+num_examples = 5
+length_example = 100
+idx = torch.zeros((num_examples, 1), dtype=torch.long)
+for iter in range(length_example):
+    # 1. Generate
+    logits, _ = bigram_model(idx)
+    # 2. Logits -> Probs
+    probs = torch.nn.functional.softmax(logits[:, -1, :], dim=-1)
+    # 3. Sample
+    new_id = torch.multinomial(probs, num_samples=1)
+    # 4. Concatenate 
+    idx = torch.cat((idx, new_id), dim=1)
+
+for i_example, example in enumerate(idx):
+    gen_text = decoder(example.tolist())
+    print(f'Generation [{i_example}]: {gen_text}\n\n')
