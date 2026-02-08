@@ -3,6 +3,7 @@ import os
 import torch
 import random
 import time
+import math
 import numpy as np
 
 #####################################
@@ -13,9 +14,14 @@ seed = 971
 
 training_data_ratio = 0.9
 block_size = 8
-batch_size = 4
+batch_size = 32
 
-training_steps = 20000
+num_layers = 3
+num_heads = 4
+num_embed = 32
+dropout = 0.2
+
+training_steps = 10000
 learning_rate = 0.001
 
 eval_interval = 1000
@@ -119,6 +125,78 @@ class BigramModel(torch.nn.Module):
         return logits, loss
 
 #####################################
+# Transformer Model
+#####################################
+
+class CausalSelfAttention(torch.nn.Module):
+    def __init__(self, block_size, num_embed, num_heads, dropout) -> None:
+        super().__init__()
+        assert(num_embed % num_heads == 0)
+        self.num_heads = num_heads
+        self.head_size = num_embed // num_heads
+        self.Wk = torch.nn.Linear(num_embed, num_embed, bias=False)
+        self.Wv = torch.nn.Linear(num_embed, num_embed, bias=False)
+        self.Wq = torch.nn.Linear(num_embed, num_embed, bias=False)
+        self.Wo = torch.nn.Linear(num_embed, num_embed, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones((block_size, block_size))))
+        self.AttnDropout = torch.nn.Dropout(p=dropout)
+        self.OutputDropout = torch.nn.Dropout(p=dropout)
+    
+    def forward(self, x, targets=None):
+        # Parameters
+        B, T, C = x.shape
+        N = self.num_heads
+        H = self.head_size
+        K = self.Wk(x)
+        V = self.Wv(x)
+        Q = self.Wq(x)
+
+        # Input projection
+        K = K.view(B, T, N, H).permute(0,2,1,3)
+        V = V.view(B, T, N, H).permute(0,2,1,3)
+        Q = Q.view(B, T, N, H).permute(0,2,1,3)
+
+        # Attention matrix
+        Attn = Q @ K.transpose(-2, -1)
+        Attn = Attn / math.sqrt(H)
+
+        # Casual Masking
+        Attn = Attn.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+
+        # Softmax
+        Attn = torch.nn.functional.softmax(Attn, dim=-1)
+
+        # Attention dropout
+        Attn = self.AttnDropout(Attn)
+
+        # Apply attention
+        x = Attn @ V
+        x = x.permute(0, 2, 1, 3).contiguous().view(B, T, C)
+
+        # Output projection
+        x = self.Wo(x)
+
+        # Output dropout
+        x = self.OutputDropout(x)
+        return x
+        
+
+class TransformerModel(torch.nn.Module):
+    def __init__(self, vocab_size, block_size, num_embed, num_heads, num_layers, dropout) -> None:
+        super().__init__()
+
+        self.embedding = torch.nn.Embedding(vocab_size, num_embed)
+        self.pos_embedding = torch.nn.Embedding(block_size, num_embed)
+
+    def forward(self, x, targets=None):
+        logits = self.embedding(x)
+        loss = None
+        B, T, C = logits.shape
+        if targets is not None:
+            loss = torch.nn.functional.cross_entropy(logits.view(B * T, C), targets.view(B * T))
+        return logits, loss
+
+#####################################
 # Training Loop
 #####################################
 
@@ -161,7 +239,6 @@ for s in range(training_steps):
 #####################################
 # Inference Loop
 #####################################
-
 
 idx = torch.zeros((inference_num, 1), dtype=torch.long, device=device)
 
