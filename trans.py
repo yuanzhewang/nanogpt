@@ -13,19 +13,19 @@ import numpy as np
 seed = 971
 
 training_data_ratio = 0.9
-block_size = 8
+block_size = 64
 batch_size = 32
 
 num_layers = 3
-num_heads = 4
-num_embed = 32
+num_heads = 6
+num_embed = 6 * 64
 dropout = 0.2
 
-training_steps = 10000
+training_steps = 3000
 learning_rate = 0.001
 
-eval_interval = 1000
-eval_examples = 100
+eval_interval = 100
+eval_examples = 20
 
 inference_num = 5
 inference_length = 100
@@ -47,7 +47,7 @@ print(f'Set all random seeds to {seed}')
 
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 # Trick: for small examples, CPU is faster
-device = 'cpu'
+#device = 'cpu'
 print(f'Code runs on {device}')
 
 #####################################
